@@ -18,7 +18,7 @@ from decimal import Decimal
 from typing import Iterable, Sequence
 
 from .audit import AuditRecord, AuditSink, InMemorySink
-from .intent import Intent
+from .intent import Actor, Intent
 from .policy import Autonomy, Policy
 from .rules import Rule
 from .verdict import Decision, Signal, Verdict
@@ -75,7 +75,14 @@ class Engine:
             if decision is not Decision.BLOCK:
                 decision = Decision.CONFIRM
             reasons.extend(violations)
-        elif decision is Decision.ALLOW and self.policy.autonomy is Autonomy.NORMAL:
+        elif (
+            decision is Decision.ALLOW
+            and intent.actor is Actor.AGENT
+            and self.policy.autonomy is Autonomy.NORMAL
+        ):
+            # Уровень автономии касается только действий агента от нашего имени.
+            # К входящим проверкам он неприменим: страж не дёргает человека
+            # на каждом чистом сообщении.
             decision = Decision.CONFIRM
             reasons.append("обычный уровень автономии — подтверждаем вручную")
 

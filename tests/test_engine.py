@@ -74,6 +74,17 @@ class GuardianTests(unittest.TestCase):
         self.assertIn("intent_id", self.sink.records[0].to_json())
 
 
+    def test_autonomy_does_not_apply_to_inbound(self) -> None:
+        """Уровень автономии — про агента. Страж не дёргает человека зря."""
+        engine = Engine(DEFAULT_GUARDIAN_RULES, Policy(autonomy=Autonomy.NORMAL), InMemorySink())
+        intent = Intent(
+            actor=Actor.COUNTERPARTY,
+            action=Action.INBOUND_MESSAGE,
+            artifacts=(Artifact(ArtifactKind.TEXT, "Привет, как дела?"),),
+        )
+        self.assertEqual(engine.evaluate(intent).decision, Decision.ALLOW)
+
+
 class WalletTests(unittest.TestCase):
     def _engine(self, autonomy: Autonomy) -> Engine:
         policy = Policy(
