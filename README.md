@@ -2,7 +2,8 @@
 
 **A decision layer for actions that move money — whether an AI agent proposes them, or a stranger does.**
 
-Zero dependencies. Pure Python. Auditable by design.
+Zero dependencies. Two implementations — Python and JavaScript — held together by a
+shared conformance suite. Auditable by design.
 
 ---
 
@@ -35,11 +36,12 @@ is reported as absence of signals — not as a guarantee.
 contracts, domains, links, message structure. We do not profile the person on the other
 side. Knowing *who* is running a scam does not stop the transfer; recognising the *pattern*
 does. Deanonymisation adds near-zero protective value and maximal risk, so it is out of
-scope by design — not by configuration.
+scope by design — not by configuration. There is no `identity` artifact kind to enable.
 
 **Hard limits beat autonomy.** The spending envelope always applies. An "advanced"
 autonomy level means *"don't ask me about small things within what I allowed"* — it never
-means unlimited.
+means unlimited. Autonomy governs agent-proposed actions only; it never gates inbound
+screening.
 
 **Everything is logged.** Every evaluation produces an audit record: what was proposed,
 which rules fired, what was decided, and why. For the user this is trust. For the operator
@@ -53,43 +55,106 @@ it is evidence.
 adapter → Intent → [ envelope → rules → score → thresholds → autonomy ] → Verdict → audit
 ```
 
-The engine knows nothing about blockchains or messengers. Adapters translate their world
-into an `Intent` and act on the `Verdict`.
+The engine knows nothing about blockchains, browsers, or messengers. Adapters translate
+their world into an `Intent` and act on the `Verdict`.
 
 | Adapter | Actor | Enforcement |
 |---|---|---|
 | Scam guardian | `COUNTERPARTY` | "Don't send this — here's why" |
 | Agent wallet | `AGENT` | "I won't sign this transaction" |
 
-Rules never make network calls. External facts (domain age, report counts, address
-history) are attached to `Artifact.facts` by the adapter, which keeps the core
-dependency-free and fully testable.
+Rules never make network calls. External facts — domain age, report counts, address
+history, on-chain reputation — are attached to `Artifact.facts` by the adapter. This keeps
+the core dependency-free, fully testable, and identical across languages.
+
+---
+
+## Two implementations, one contract
+
+| | Python | JavaScript |
+|---|---|---|
+| Path | `guardrails/` | `js/src/` |
+| Runtime | 3.10+ | Node 18+, or any modern browser |
+| Dependencies | none | none |
+| Build step | none | none |
+| Use | servers, bots, agents | browsers, extensions, edge |
+
+The JavaScript port exists so that analysis can run **on the user's device**. For a tool
+that inspects potentially private messages, not transmitting them at all is a stronger
+privacy guarantee than any policy promise.
+
+Two implementations are a real maintenance cost. `conformance/cases.json` is how that cost
+is paid: a single set of cases, run by both. A divergence fails a test rather than
+surprising a user.
+
+```bash
+python -m unittest discover -s tests -v     # 25 tests
+cd js && node --test test/*.test.js         # 16 conformance cases
+```
+
+Amounts in the conformance suite are integers on purpose — Python's `Decimal` and
+JavaScript's `Number` agree exactly only there. Adapters handling fractional amounts should
+keep the rounding decision on their side of the boundary.
+
+---
+
+## Performance
+
+Measured on one core, message of ~850 characters with a link and a wallet address:
+
+| | per check | throughput |
+|---|---|---|
+| JavaScript (Node 22) | 0.013 ms | ~24,000 /sec |
+| Python 3.13 | 0.36 ms | ~2,200 /sec |
+
+Pattern matching is the entire cost, and it is small. Run in the browser, concurrency stops
+being a server-side question at all: a thousand simultaneous users are a thousand devices
+each doing 0.013 ms of work.
 
 ---
 
 ## Usage
 
+Python:
+
 ```python
-from decimal import Decimal
 from guardrails import (
-    Action, Actor, Artifact, ArtifactKind, Autonomy,
-    DEFAULT_GUARDIAN_RULES, Engine, Envelope, Intent, Policy,
+    Action, Actor, Artifact, ArtifactKind, DEFAULT_GUARDIAN_RULES, Engine, Intent,
 )
 
 engine = Engine(DEFAULT_GUARDIAN_RULES)
 
-intent = Intent(
+verdict = engine.evaluate(Intent(
     actor=Actor.COUNTERPARTY,
     action=Action.INBOUND_MESSAGE,
     artifacts=(
-        Artifact(ArtifactKind.TEXT, "Срочно! Служба безопасности: подтвердите код"),
+        Artifact(ArtifactKind.TEXT, "Urgent — confirm the code from the SMS"),
         Artifact(ArtifactKind.DOMAIN, "bank-secure.top", {"domain_age_days": 2}),
     ),
-)
-
-verdict = engine.evaluate(intent)
+))
 print(verdict.decision)     # Decision.BLOCK
-print(verdict.explanation)  # human-readable, ready to show the user
+print(verdict.explanation)  # ready to show the user
+```
+
+JavaScript:
+
+```js
+import {
+  artifact, intent, DEFAULT_GUARDIAN_RULES, Engine, explain,
+} from './js/src/index.js';
+
+const engine = new Engine(DEFAULT_GUARDIAN_RULES);
+
+const verdict = engine.evaluate(intent({
+  actor: 'counterparty',
+  action: 'inbound_message',
+  artifacts: [
+    artifact('text', 'Urgent — confirm the code from the SMS'),
+    artifact('domain', 'bank-secure.top', { domain_age_days: 2 }),
+  ],
+}));
+console.log(verdict.decision);   // 'block'
+console.log(explain(verdict));
 ```
 
 Agent wallet, with a spending envelope:
@@ -118,21 +183,19 @@ class MyRule:
         return [Signal(code=self.code, severity=0.4, explanation="...")]
 ```
 
-A rule returns observations, never decisions. The engine combines them.
+A rule returns observations, never decisions. The engine combines them. Add the same rule
+to both implementations and cover it in `conformance/cases.json`.
 
 ---
 
 ## Status
 
-Early. The interfaces are settled; the rule library is deliberately small so the shape
-stays legible. Contributions of scam patterns — especially in under-served languages —
-are the most valuable thing anyone can add.
+Early. The interfaces are settled and the two implementations agree. The rule library is
+deliberately small so the shape stays legible.
 
-## Tests
-
-```bash
-python3 -m unittest discover -s tests -v
-```
+Built on top of this engine:
+[scam-guardian](https://github.com/rusmoody/scam-guardian) — forward a suspicious message,
+get an explanation of what's wrong with it.
 
 ## License
 

@@ -1,0 +1,286 @@
+{
+  "version": "1.0",
+  "note": "Единый набор кейсов для всех реализаций движка. Питон и джаваскрипт обязаны давать одинаковые решения и одинаковый score. Расхождение — баг, а не диалект. Суммы намеренно целые: Decimal в питоне и float в JS совпадают только на них.",
+  "tolerance": 1e-9,
+  "cases": [
+    {
+      "id": "clean_inbound",
+      "description": "Обычное сообщение — сигналов нет, пропускаем",
+      "rules": "guardian",
+      "policy": { "autonomy": "normal" },
+      "intent": {
+        "actor": "counterparty",
+        "action": "inbound_message",
+        "artifacts": [{ "kind": "text", "value": "Привет! Скинь адрес, я подъеду" }]
+      },
+      "expect": { "decision": "allow", "score": 0.0, "signalCodes": [] }
+    },
+    {
+      "id": "autonomy_does_not_touch_inbound",
+      "description": "Обычный уровень автономии не должен дёргать человека на входящих",
+      "rules": "guardian",
+      "policy": { "autonomy": "normal" },
+      "intent": {
+        "actor": "counterparty",
+        "action": "inbound_call",
+        "artifacts": [{ "kind": "text", "value": "Добрый день, это из поликлиники" }]
+      },
+      "expect": { "decision": "allow", "score": 0.0, "signalCodes": [] }
+    },
+    {
+      "id": "bank_impersonation_full",
+      "description": "Давление + свежий домен + необратимый канал",
+      "rules": "guardian",
+      "policy": { "autonomy": "normal" },
+      "intent": {
+        "actor": "counterparty",
+        "action": "inbound_message",
+        "context": { "payment_channel": "wire" },
+        "artifacts": [
+          {
+            "kind": "text",
+            "value": "Служба безопасности! Счёт заблокирован. Срочно переведите на безопасный счёт и подтвердите код."
+          },
+          {
+            "kind": "domain",
+            "value": "sber-secure24.top",
+            "facts": { "domain_age_days": 2 }
+          }
+        ]
+      },
+      "expect": {
+        "decision": "block",
+        "score": 0.973,
+        "signalCodes": ["fresh_domain", "irreversible_channel", "pressure_pattern"]
+      }
+    },
+    {
+      "id": "fresh_domain_only",
+      "description": "Домен возрастом 12 дней в одиночку — предупреждение, не блокировка",
+      "rules": "guardian",
+      "policy": { "autonomy": "normal" },
+      "intent": {
+        "actor": "counterparty",
+        "action": "inbound_message",
+        "artifacts": [
+          { "kind": "text", "value": "смотри какой проект запустили" },
+          { "kind": "url", "value": "https://new-yield.io", "facts": { "domain_age_days": 12 } }
+        ]
+      },
+      "expect": { "decision": "confirm", "score": 0.4, "signalCodes": ["fresh_domain"] }
+    },
+    {
+      "id": "very_fresh_domain",
+      "description": "Моложе недели весит больше",
+      "rules": "guardian",
+      "policy": { "autonomy": "normal" },
+      "intent": {
+        "actor": "counterparty",
+        "action": "inbound_message",
+        "artifacts": [
+          { "kind": "text", "value": "залетай" },
+          { "kind": "url", "value": "https://x-drop.top", "facts": { "domain_age_days": 3 } }
+        ]
+      },
+      "expect": { "decision": "confirm", "score": 0.6, "signalCodes": ["fresh_domain"] }
+    },
+    {
+      "id": "address_with_reports",
+      "description": "Адрес из реестра жалоб блокируется сам по себе",
+      "rules": "guardian",
+      "policy": { "autonomy": "normal" },
+      "intent": {
+        "actor": "user",
+        "action": "transfer",
+        "artifacts": [
+          { "kind": "address", "value": "0xdead", "facts": { "scam_reports": 7 } }
+        ]
+      },
+      "expect": { "decision": "block", "score": 0.9, "signalCodes": ["scam_reports"] }
+    },
+    {
+      "id": "irreversible_channel_alone",
+      "description": "Один только необратимый канал — предупреждение",
+      "rules": "guardian",
+      "policy": { "autonomy": "normal" },
+      "intent": {
+        "actor": "counterparty",
+        "action": "inbound_message",
+        "context": { "payment_channel": "gift_card" },
+        "artifacts": [{ "kind": "text", "value": "оплати подарочными картами" }]
+      },
+      "expect": {
+        "decision": "confirm",
+        "score": 0.55,
+        "signalCodes": ["irreversible_channel"]
+      }
+    },
+    {
+      "id": "wallet_advanced_silent",
+      "description": "Продвинутый уровень исполняет молча внутри конверта",
+      "rules": "wallet",
+      "policy": { "autonomy": "advanced", "envelope": { "perTxCap": 100, "dailyCap": 500 } },
+      "intent": {
+        "actor": "agent",
+        "action": "transfer",
+        "amount": 40,
+        "currency": "USDC",
+        "artifacts": [
+          { "kind": "address", "value": "0xpool", "facts": { "seen_before": true } }
+        ]
+      },
+      "expect": { "decision": "allow", "score": 0.0, "signalCodes": [] }
+    },
+    {
+      "id": "wallet_normal_asks",
+      "description": "Обычный уровень спрашивает даже на чистой транзакции",
+      "rules": "wallet",
+      "policy": { "autonomy": "normal", "envelope": { "perTxCap": 100, "dailyCap": 500 } },
+      "intent": {
+        "actor": "agent",
+        "action": "transfer",
+        "amount": 40,
+        "currency": "USDC",
+        "artifacts": [
+          { "kind": "address", "value": "0xpool", "facts": { "seen_before": true } }
+        ]
+      },
+      "expect": { "decision": "confirm", "score": 0.0, "signalCodes": [] }
+    },
+    {
+      "id": "advanced_is_not_unlimited",
+      "description": "Конверт не пробивается уровнем автономии",
+      "rules": "wallet",
+      "policy": { "autonomy": "advanced", "envelope": { "perTxCap": 100, "dailyCap": 500 } },
+      "intent": {
+        "actor": "agent",
+        "action": "transfer",
+        "amount": 900,
+        "currency": "USDC",
+        "artifacts": [
+          { "kind": "address", "value": "0xpool", "facts": { "seen_before": true } }
+        ]
+      },
+      "expect": { "decision": "confirm", "score": 0.0, "signalCodes": [] }
+    },
+    {
+      "id": "daily_cap_counts_prior_spend",
+      "description": "Дневной лимит учитывает уже потраченное",
+      "rules": "wallet",
+      "policy": { "autonomy": "advanced", "envelope": { "perTxCap": 100, "dailyCap": 500 } },
+      "spentToday": 450,
+      "intent": {
+        "actor": "agent",
+        "action": "transfer",
+        "amount": 90,
+        "currency": "USDC",
+        "artifacts": [
+          { "kind": "address", "value": "0xpool", "facts": { "seen_before": true } }
+        ]
+      },
+      "expect": { "decision": "confirm", "score": 0.0, "signalCodes": [] }
+    },
+    {
+      "id": "denylist_stops_clean_transfer",
+      "description": "Чёрный список срабатывает без единого сигнала",
+      "rules": "wallet",
+      "policy": {
+        "autonomy": "advanced",
+        "envelope": { "perTxCap": 100, "denylist": ["0xbad"] }
+      },
+      "intent": {
+        "actor": "agent",
+        "action": "transfer",
+        "amount": 10,
+        "currency": "USDC",
+        "artifacts": [
+          { "kind": "address", "value": "0xbad", "facts": { "seen_before": true } }
+        ]
+      },
+      "expect": { "decision": "confirm", "score": 0.0, "signalCodes": [] }
+    },
+    {
+      "id": "action_not_allowed",
+      "description": "Действие вне вайтлиста уходит на подтверждение",
+      "rules": "wallet",
+      "policy": {
+        "autonomy": "advanced",
+        "envelope": { "allowedActions": ["transfer"] }
+      },
+      "intent": {
+        "actor": "agent",
+        "action": "approve_allowance",
+        "artifacts": [
+          { "kind": "contract", "value": "0xrouter", "facts": { "seen_before": true } }
+        ]
+      },
+      "expect": { "decision": "confirm", "score": 0.0, "signalCodes": [] }
+    },
+    {
+      "id": "unknown_recipient",
+      "description": "Незнакомый получатель — предупреждение",
+      "rules": "wallet",
+      "policy": { "autonomy": "advanced", "envelope": { "perTxCap": 100 } },
+      "intent": {
+        "actor": "agent",
+        "action": "transfer",
+        "amount": 40,
+        "currency": "USDC",
+        "artifacts": [{ "kind": "address", "value": "0xnew" }]
+      },
+      "expect": {
+        "decision": "confirm",
+        "score": 0.4,
+        "signalCodes": ["unknown_recipient"]
+      }
+    },
+    {
+      "id": "block_survives_envelope_violation",
+      "description": "Нарушение конверта не понижает блокировку до подтверждения",
+      "rules": "wallet",
+      "policy": { "autonomy": "advanced", "envelope": { "perTxCap": 100 } },
+      "intent": {
+        "actor": "agent",
+        "action": "transfer",
+        "amount": 900,
+        "currency": "USDC",
+        "artifacts": [
+          { "kind": "address", "value": "0xdead", "facts": { "scam_reports": 9, "seen_before": true } }
+        ]
+      },
+      "expect": { "decision": "block", "score": 0.9, "signalCodes": ["scam_reports"] }
+    },
+    {
+      "id": "many_weak_signals_never_reach_one",
+      "description": "Накопление сигналов асимптотично: score строго меньше 1.0",
+      "rules": "guardian",
+      "policy": { "autonomy": "normal" },
+      "intent": {
+        "actor": "counterparty",
+        "action": "inbound_message",
+        "context": { "payment_channel": "crypto" },
+        "artifacts": [
+          {
+            "kind": "text",
+            "value": "Служба безопасности! Счёт заблокирован. Срочно немедленно переведите на безопасный счёт, подтвердите код, никому не сообщайте."
+          },
+          { "kind": "domain", "value": "a.top", "facts": { "domain_age_days": 1, "scam_reports": 20 } },
+          { "kind": "domain", "value": "b.top", "facts": { "domain_age_days": 1, "scam_reports": 20 } }
+        ]
+      },
+      "expect": {
+        "decision": "block",
+        "scoreBelow": 1.0,
+        "scoreAbove": 0.99,
+        "signalCodes": [
+          "fresh_domain",
+          "fresh_domain",
+          "irreversible_channel",
+          "pressure_pattern",
+          "scam_reports",
+          "scam_reports"
+        ]
+      }
+    }
+  ]
+}

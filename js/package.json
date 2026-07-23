@@ -1,0 +1,16 @@
+{
+  "name": "@rusmoody/guardrails-core",
+  "version": "0.1.0",
+  "description": "A decision layer for actions that move money — agent-proposed or counterparty-proposed. Zero dependencies, no build step.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "files": ["src"],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": ["ai-safety", "agents", "scam-detection", "guardrails", "audit"],
+  "license": "Apache-2.0",
+  "dependencies": {},
+  "engines": { "node": ">=18" }
+}
